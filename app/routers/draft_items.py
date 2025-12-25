@@ -8,6 +8,7 @@ from app.models.draft_item import DraftItem
 from app.models.inventory_item import InventoryItem
 from app.schemas.draft_item import DraftItemCreate, DraftItemUpdate, DraftItemResponse
 from app.schemas.inventory_item import InventoryItemCreate, InventoryItemResponse
+from app.services.expiry_prediction import expiry_prediction_service
 
 router = APIRouter(prefix="/draft-items", tags=["draft-items"])
 
@@ -24,12 +25,41 @@ def get_current_user_id(x_user_id: str = Header(...)) -> UUID:
 def create_draft_item(
     draft: DraftItemCreate,
     db: Session = Depends(get_db),
-    user_id: UUID = Depends(get_current_user_id)
+    user_id: UUID = Depends(get_current_user_id),
+    predict_expiry: bool = True
 ):
-    """Create a new draft item (manual or AI-generated)"""
+    """
+    Create a new draft item (manual or AI-generated).
+
+    If expiration_date is not provided and predict_expiry=True,
+    automatically predicts expiry date using the prediction service.
+    """
+    draft_data = draft.model_dump()
+
+    # Auto-predict expiry if not provided
+    if predict_expiry and draft_data.get("expiration_date") is None:
+        prediction = expiry_prediction_service.predict_expiry(
+            name=draft_data["name"],
+            category=draft_data.get("category"),
+            storage_location=draft_data.get("location")
+        )
+
+        # Enrich draft with prediction
+        draft_data["expiration_date"] = prediction.expiry_date
+
+        # Update confidence if not set or lower than prediction
+        if draft_data.get("confidence_score") is None:
+            draft_data["confidence_score"] = prediction.confidence
+
+        # Add prediction source to notes if not already present
+        if draft_data.get("notes"):
+            draft_data["notes"] += f"\n[Auto-predicted: {prediction.reasoning}]"
+        else:
+            draft_data["notes"] = f"[Auto-predicted: {prediction.reasoning}]"
+
     db_draft = DraftItem(
         user_id=user_id,
-        **draft.model_dump()
+        **draft_data
     )
     db.add(db_draft)
     db.commit()

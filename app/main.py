@@ -4,7 +4,7 @@ from sqlalchemy import text
 
 from app.core.database import engine, Base, get_db
 from app.models import user, draft_item, inventory_item  # noqa: F401
-from app.routers import draft_items, inventory_items
+from app.routers import draft_items, inventory_items, expiry_prediction
 
 
 app = FastAPI(
@@ -16,6 +16,7 @@ app = FastAPI(
 # Register routers
 app.include_router(draft_items.router, prefix="/api")
 app.include_router(inventory_items.router, prefix="/api")
+app.include_router(expiry_prediction.router, prefix="/api")
 
 
 @app.get("/health")
